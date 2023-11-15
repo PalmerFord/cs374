@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "X-graph.h"
+#include <mpi.h>
+#include "parallelLoopChunks.h"
+#include <limits.h>
 
 #define UNBURNT 0
 #define SMOLDERING 1
@@ -29,18 +32,18 @@ extern void print_forest(int, int **);
 
 int main(int argc, char ** argv) {
     // initial conditions and variable definitions
-    int forest_size=20;
+    int forest_size = 20;
     double * prob_spread;
-    double prob_min=0.0;
-    double prob_max=1.0;
+    double prob_min = 0.0;
+    double prob_max = 1.0;
     double prob_step;
     int **forest;
     double * percent_burned;
     int i_trial;
-    int n_trials=5000;
+    int n_trials = 5000;
     int i_prob;
-    int n_probs=101;
-    int do_display=1;
+    int n_probs = 101;
+    int do_display = 0;
 
     int * iter_count;
     int * total_iter;
@@ -48,6 +51,7 @@ int main(int argc, char ** argv) {
     double start_time = 0.0;
     int num_processes = 0;
     int id = 0;
+    const int MASTER = 0;
 
     xgraph thegraph;
 
@@ -55,7 +59,7 @@ int main(int argc, char ** argv) {
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
-    MPI_Comm_size(MPI_COMM_WORLD, &numProcesses);
+    MPI_Comm_size(MPI_COMM_WORLD, &num_processes);
     start_time = MPI_Wtime();
 
     // check command line arguments
@@ -81,7 +85,7 @@ int main(int argc, char ** argv) {
     iter_count = (int *) malloc (n_probs*sizeof(int));
     total_percent = (double *) malloc (n_probs*sizeof(double));
     total_iter = (int *) malloc (n_probs*sizeof(int));
-    getChunkStartStopValues(id, numProcesses, n_trials, &start, &stop);
+    getChunkStartStopValues(id, num_processes, n_trials, &start, &stop);
 
     // for a number of probabilities, calculate
     // average burn and output
@@ -90,18 +94,19 @@ int main(int argc, char ** argv) {
         printf("Probability of fire spreading | Average percent burned | Number of Iterations\n");
     }
 
-    // set up the initial values of the array
+    //initialize values of the array
     for (i_prob = 0; i_prob < n_probs; i_prob++) {
         prob_spread[i_prob] = prob_min + (double)i_prob * prob_step;
-        percent_burned[i_prob]=0.0;
-        iter_count[i_prob]=0;
+        percent_burned[i_prob] = 0.0;
+        iter_count[i_prob] = 0;
     }
 
+    // perform simulation trials
     for (i_trial = start; i_trial < stop; ++i_trial) {
         for (i_prob = 0; i_prob < n_probs; i_prob++) {
             iter_count[i_prob] = burn_until_out(forest_size,forest,prob_spread[i_prob],
                 forest_size/2,forest_size/2);
-            percent_burned[i_prob]+=get_percent_burned(forest_size,forest);
+            percent_burned[i_prob] += get_percent_burned(forest_size,forest);
             
         }
     }
@@ -109,19 +114,19 @@ int main(int argc, char ** argv) {
     MPI_Reduce(percent_burned, total_percent, n_probs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(iter_count, total_iter, n_probs, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 
-    // do some clean up
+    // display average burn statistics and total simulation time
     if (id == MASTER) {
         for (i_prob = 0; i_prob < n_probs; i_prob++) {
-            total_percent[i_prob]/=n_trials;
+            total_percent[i_prob] /= n_trials;
             printf("%lf \t %lf \t%d\n", prob_spread[i_prob], total_percent[i_prob], iter_count[i_prob]);
         }
 
         printf("Total Time: %f\n", MPI_Wtime() - start_time);
 
         // plot graph
-        if (do_display==1) {
-            xgraphSetup(&thegraph,300,300);
-            xgraphDraw(&thegraph,n_probs,0,0,1,1,prob_spread,total_percent);
+        if (do_display == 1) {
+            xgraphSetup(&thegraph, 300, 300);
+            xgraphDraw(&thegraph, n_probs, 0, 0, 1, 1, prob_spread, total_percent);
             pause();
         }
     }
