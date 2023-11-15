@@ -26,7 +26,7 @@ $(PROGRAM): $(OBJS)
 # other dependencies (based on #includes)
 X-graph.o: X-graph.h display.h
 display.o: display.h
-firestarter.o: X-graph.h
+firestarter.o: X-graph.h parallelLoopChunks.h
 
 clean:
 	/bin/rm -f $(OBJS) $(PROGRAM) *~ *#
