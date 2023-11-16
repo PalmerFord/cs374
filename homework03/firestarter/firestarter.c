@@ -1,13 +1,17 @@
-/* firestarter.c 
+/* Palmer Ford
+ * Parallelization of the original firestarter where number of trial is parallelized to reduce completion time.
+ * Calvin University
+ * November 13, 2023
+ * for CS374, project 2
+ *
+ * firestarter.c 
  * David Joiner
  * Usage: Fire [forestSize(20)] [numTrials(5000)] * [numProbabilities(101)] [showGraph(1)]
  */
+#include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "X-graph.h"
-#include <mpi.h>
-#include "parallelLoopChunks.h"
-#include <limits.h>
 
 #define UNBURNT 0
 #define SMOLDERING 1
@@ -32,35 +36,27 @@ extern void print_forest(int, int **);
 
 int main(int argc, char ** argv) {
     // initial conditions and variable definitions
-    int forest_size = 20;
+    int forest_size=20;
     double * prob_spread;
-    double prob_min = 0.0;
-    double prob_max = 1.0;
+    double prob_min=0.0;
+    double prob_max=1.0;
     double prob_step;
     int **forest;
+    double * count;
+    double * count_local;          // For MPI_Reduce
+    double * percent_burned_local; // For MPI_Reduce
     double * percent_burned;
     int i_trial;
-    int n_trials = 100;
+    int n_trials=5000;
     int i_prob;
-    int n_probs = 101;
-    int do_display = 1;
-
-    int * iter_count;
-    int * total_iter;
-    double * total_percent;
-    double start_time = 0.0;
-    int num_processes = 0;
-    int id = 0;
-    const int MASTER = 0;
-
+    int n_probs=101;
+    int do_display=1;
+    Bool initialized = false;
     xgraph thegraph;
-
-    unsigned start = -1, stop = -1;
-
-    MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &id);
-    MPI_Comm_size(MPI_COMM_WORLD, &num_processes);
-    start_time = MPI_Wtime();
+    // MPI related variables
+    int id = -1;
+    int numProcesses = -1;
+    double startTime = 0.0, totalTime = 0.0;
 
     // check command line arguments
     if (argc > 1) {
@@ -82,63 +78,79 @@ int main(int argc, char ** argv) {
     forest=allocate_forest(forest_size);
     prob_spread = (double *) malloc (n_probs*sizeof(double));
     percent_burned = (double *) malloc (n_probs*sizeof(double));
-    iter_count = (int *) malloc (n_probs*sizeof(int));
-    total_percent = (double *) malloc (n_probs*sizeof(double));
-    total_iter = (int *) malloc (n_probs*sizeof(int));
-    getChunkStartStopValues(id, num_processes, n_trials, &start, &stop);
+    count = (double *) malloc (n_probs*sizeof(double));
 
     // for a number of probabilities, calculate
     // average burn and output
     prob_step = (prob_max-prob_min)/(double)(n_probs-1);
-    if (id == MASTER) {
-        printf("Probability of fire spreading | Average percent burned | Number of Iterations\n");
-    }
 
-    //initialize values of the array
-    for (i_prob = 0; i_prob < n_probs; i_prob++) {
-        prob_spread[i_prob] = prob_min + (double)i_prob * prob_step;
-        percent_burned[i_prob] = 0.0;
-        iter_count[i_prob] = 0;
-    }
+    // MPI initialization
+	MPI_Init(&argc, &argv);
+	MPI_Comm_rank(MPI_COMM_WORLD, &id);
+	MPI_Comm_size(MPI_COMM_WORLD, &numProcesses);
 
-    // perform simulation trials
-    for (i_trial = start; i_trial < stop; ++i_trial) {
-        for (i_prob = 0; i_prob < n_probs; i_prob++) {
-            iter_count[i_prob] = burn_until_out(forest_size,forest,prob_spread[i_prob],
+    // Dynamic allocation for local variables
+    percent_burned_local = (double *) malloc (n_probs*sizeof(double));
+    count_local = (double *) malloc (n_probs*sizeof(double));
+
+    startTime = MPI_Wtime();
+
+    // Slicing parallelization for trials
+    for (i_trial = id; i_trial < n_trials; i_trial += numProcesses) {
+        for (i_prob = 0 ; i_prob < n_probs; i_prob++) {
+            //for a number of trials, calculate average
+            //percent burn
+            if (!initialized) {
+                percent_burned_local[i_prob]=0.0;
+                prob_spread[i_prob] = prob_min + (double)i_prob * prob_step;
+            }
+            //burn until fire is gone
+            count_local[i_prob] += burn_until_out(forest_size,forest,prob_spread[i_prob],
                 forest_size/2,forest_size/2);
-            percent_burned[i_prob] += get_percent_burned(forest_size,forest);
+            percent_burned_local[i_prob] += get_percent_burned(forest_size,forest);
         }
+        initialized = true;
     }
 
-    MPI_Reduce(percent_burned, total_percent, n_probs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    MPI_Reduce(iter_count, total_iter, n_probs, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    // Add all results from each processes
+    MPI_Reduce(percent_burned_local, percent_burned, n_probs, MPI_DOUBLE, MPI_SUM, 0,
+            MPI_COMM_WORLD);
 
-    // display average burn statistics and total simulation time
-    if (id == MASTER) {
-        for (i_prob = 0; i_prob < n_probs; i_prob++) {
-            total_percent[i_prob] /= n_trials;
-            printf("%lf \t %lf \t%d\n", prob_spread[i_prob], total_percent[i_prob], iter_count[i_prob]);
+    MPI_Reduce(count_local, count, n_probs, MPI_DOUBLE, MPI_SUM, 0,
+            MPI_COMM_WORLD);
+
+    totalTime = MPI_Wtime() - startTime;
+
+    if (id == 0) {
+        printf("Probability of fire spreading, Average percent burned with forest size of %dx%d\n", forest_size, forest_size);
+
+        // Print arrays of percent burned and iteration counts
+        for (int i = 0; i < n_probs; i++) {
+            percent_burned[i] /= n_trials;
+            count[i] /= n_trials;
+            printf("%lf , %lf , count: %lf \n",prob_spread[i],
+                percent_burned[i], count[i]);
         }
 
-        printf("Total Time: %f\n", MPI_Wtime() - start_time);
-
+        // print time it took to find total time
+        printf("Finished in time %f secs.\n", totalTime);
+        
         // plot graph
-        if (do_display == 1) {
-            xgraphSetup(&thegraph, 300, 300);
-            xgraphDraw(&thegraph, n_probs, 0, 0, 1, 1, prob_spread, total_percent);
+        if (do_display==1) {
+            xgraphSetup(&thegraph,300,300);
+            xgraphDraw(&thegraph,n_probs,0,0,1,1,prob_spread,percent_burned);
             pause();
         }
     }
 
-    MPI_Finalize();
-
     // clean up
+    MPI_Finalize();
     delete_forest(forest_size,forest);
     free(prob_spread);
     free(percent_burned);
-    free(iter_count);
-    free(total_percent);
-    free(total_iter);
+    free(percent_burned_local);
+    free(count);
+    free(count_local);
     return 0;
 }
 
