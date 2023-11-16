@@ -4,7 +4,7 @@
 #SBATCH -N 8
 #
 # Set the number of processes per node (max 16)
-#SBATCH --ntasks-per-node=1
+#SBATCH --ntasks-per-node=16
 #
 
 # Load the compiler and MPI library
