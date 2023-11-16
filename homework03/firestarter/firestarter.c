@@ -40,10 +40,10 @@ int main(int argc, char ** argv) {
     int **forest;
     double * percent_burned;
     int i_trial;
-    int n_trials = 5000;
+    int n_trials = 100;
     int i_prob;
     int n_probs = 101;
-    int do_display = 0;
+    int do_display = 1;
 
     int * iter_count;
     int * total_iter;
@@ -107,7 +107,6 @@ int main(int argc, char ** argv) {
             iter_count[i_prob] = burn_until_out(forest_size,forest,prob_spread[i_prob],
                 forest_size/2,forest_size/2);
             percent_burned[i_prob] += get_percent_burned(forest_size,forest);
-            
         }
     }
 
