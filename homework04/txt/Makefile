@@ -11,4 +11,3 @@ clean:
 
 cleanText:
 	rm -f $(PROG) *.txt
-

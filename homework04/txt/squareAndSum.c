@@ -4,13 +4,19 @@
  *
  * The program is written using typedef to declare
  *  Item as a generic type, currently double.
- *1
+ *
  * Joel Adams, Fall 2023
  * for CS 374 (HPC) at Calvin University.
+ * 
+ * Alex Miller
+ * Calvin University
+ * 6 Dec 2023
+ * 
  */
 
 #include <stdio.h>      /* I/O */
 #include <stdlib.h>     /* calloc(), exit(), etc. */
+#include <mpi.h>
 
 typedef double Item;
 
@@ -19,7 +25,8 @@ double arraySquareAndSum(Item* a, int numValues);
 
 int main(int argc, char * argv[])
 {
-  double startTime = 0.0, totalTime = 0.0;
+  MPI_Init(&argc, &argv);
+  double start_time = MPI_Wtime();
   int  howMany;
   Item sum;
   Item* a;
@@ -30,9 +37,11 @@ int main(int argc, char * argv[])
   }
   
   readArray(argv[1], &a, &howMany);
+  double afterArrTime = MPI_Wtime() - start_time;
+  double sum_start = MPI_Wtime();
   sum = arraySquareAndSum(a, howMany);
-  printf("The sum of the squares of the values in the file '%s' is %g\n",
-           argv[1], sum);
+  double sumTime = MPI_Wtime() - sum_start;
+  printf("The sum of the squares of the values in the file '%s' is %g\nTimes: %f, %f, %f\n", argv[1], sum, afterArrTime, sumTime, afterArrTime + sumTime);
 
   free(a);
 
@@ -94,4 +103,3 @@ Item arraySquareAndSum(Item* a, int numValues) {
 
   return result;
 }
-

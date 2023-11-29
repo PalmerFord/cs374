@@ -1,18 +1,22 @@
-Script started on 2023-11-15 02:36:32-05:00 [TERM="xterm-256color" TTY="/dev/pts/0" COLUMNS="197" LINES="40"]
-make]0;pjf5@remotel2: ~/374/homework03/firestarter[01;32mpjf5@remotel2[00m:[01;34m~/374/homework03/firestarter[00m$ make
+Script started on 2023-11-16 21:44:59-05:00 [TERM="xterm-256color" TTY="/dev/pts/0" COLUMNS="197" LINES="16"]
+]0;pjf5@remotel1: ~/374/homework03/firestarter[01;32mpjf5@remotel1[00m:[01;34m~/374/homework03/firestarter[00m$ cat[K[K[Kmake
 mpicc -c -I/usr/X11R6/include -Wall firestarter.c
 mpicc firestarter.o X-graph.o display.o -o Fire -L/usr/X11R6/lib -lX11 -lm 
-]0;pjf5@remotel2: ~/374/homework03/firestarter[01;32mpjf5@remotel2[00m:[01;34m~/374/homework03/firestarter[00m$ cat firestarter.c
-/* firestarter.c 
+]0;pjf5@remotel1: ~/374/homework03/firestarter[01;32mpjf5@remotel1[00m:[01;34m~/374/homework03/firestarter[00m$ cat firestarter.c
+/* Palmer Ford
+ * Parallelization of the original firestarter where number of trial is parallelized to reduce completion time.
+ * Calvin University
+ * November 13, 2023
+ * for CS374, project 2
+ *
+ * firestarter.c 
  * David Joiner
  * Usage: Fire [forestSize(20)] [numTrials(5000)] * [numProbabilities(101)] [showGraph(1)]
  */
+#include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "X-graph.h"
-#include <mpi.h>
-#include "parallelLoopChunks.h"
-#include <limits.h>
 
 #define UNBURNT 0
 #define SMOLDERING 1
@@ -37,35 +41,29 @@ extern void print_forest(int, int **);
 
 int main(int argc, char ** argv) {
     // initial conditions and variable definitions
-    int forest_size = 80;
+    int forest_size=20;
     double * prob_spread;
-    double prob_min = 0.0;
-    double prob_max = 1.0;
+    double prob_min=0.0;
+    double prob_max=1.0;
     double prob_step;
     int **forest;
+    double * count;
+
+    double * count_local;          // For MPI_Reduce
+    double * percent_burned_local; // For MPI_Reduce
+
     double * percent_burned;
     int i_trial;
-    int n_trials = 5000;
+    int n_trials=5000;
     int i_prob;
-    int n_probs = 101;
-    int do_display = 0;
-
-    int * iter_count;
-    int * total_iter;
-    double * total_percent;
-    double start_time = 0.0;
-    int num_processes = 0;
-    int id = 0;
-    const int MASTER = 0;
-
+    int n_probs=101;
+    int do_display=0;
+    Bool initialized = false;
     xgraph thegraph;
-
-    unsigned start = -1, stop = -1;
-
-    MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &id);
-    MPI_Comm_size(MPI_COMM_WORLD, &num_processes);
-    start_time = MPI_Wtime();
+    
+    int id = -1;
+    int numProcesses = -1;
+    double startTime = 0.0, totalTime = 0.0;
 
     // check command line arguments
     if (argc > 1) {
@@ -87,64 +85,75 @@ int main(int argc, char ** argv) {
     forest=allocate_forest(forest_size);
     prob_spread = (double *) malloc (n_probs*sizeof(double));
     percent_burned = (double *) malloc (n_probs*sizeof(double));
-    iter_count = (int *) malloc (n_probs*sizeof(int));
-    total_percent = (double *) malloc (n_probs*sizeof(double));
-    total_iter = (int *) malloc (n_probs*sizeof(int));
-    getChunkStartStopValues(id, num_processes, n_trials, &start, &stop);
+    count = (double *) malloc (n_probs*sizeof(double));
 
     // for a number of probabilities, calculate
     // average burn and output
     prob_step = (prob_max-prob_min)/(double)(n_probs-1);
-    if (id == MASTER) {
-        printf("Probability of fire spreading | Average percent burned | Number of Iterations\n");
-    }
 
-    //initialize values of the array
-    for (i_prob = 0; i_prob < n_probs; i_prob++) {
-        prob_spread[i_prob] = prob_min + (double)i_prob * prob_step;
-        percent_burned[i_prob] = 0.0;
-        iter_count[i_prob] = 0;
-    }
+    // MPI initialization
+	MPI_Init(&argc, &argv);
+	MPI_Comm_rank(MPI_COMM_WORLD, &id);
+	MPI_Comm_size(MPI_COMM_WORLD, &numProcesses);
 
-    // perform simulation trials
-    for (i_trial = start; i_trial < stop; ++i_trial) {
-        for (i_prob = 0; i_prob < n_probs; i_prob++) {
-            iter_count[i_prob] = burn_until_out(forest_size,forest,prob_spread[i_prob],
+    // Dynamic allocation for local variables
+    percent_burned_local = (double *) malloc (n_probs*sizeof(double));
+    count_local = (double *) malloc (n_probs*sizeof(double));
+
+    startTime = MPI_Wtime();
+
+    // Slicing parallelization for trials
+    for (i_trial = id; i_trial < n_trials; i_trial += numProcesses) {
+        for (i_prob = 0 ; i_prob < n_probs; i_prob++) {
+            //for a number of trials, calculate average
+            //percent burn
+            if (!initialized) {
+                percent_burned_local[i_prob]=0.0;
+                prob_spread[i_prob] = prob_min + (double)i_prob * prob_step;
+            }
+            // Burn until the fire is out
+            count_local[i_prob] += burn_until_out(forest_size,forest,prob_spread[i_prob],
                 forest_size/2,forest_size/2);
-            percent_burned[i_prob] += get_percent_burned(forest_size,forest);
-            
+            percent_burned_local[i_prob] += get_percent_burned(forest_size,forest);
         }
+        initialized = true;
     }
 
-    MPI_Reduce(percent_burned, total_percent, n_probs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    MPI_Reduce(iter_count, total_iter, n_probs, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(percent_burned_local, percent_burned, n_probs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(count_local, count, n_probs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
-    // display average burn statistics and total simulation time
-    if (id == MASTER) {
-        for (i_prob = 0; i_prob < n_probs; i_prob++) {
-            total_percent[i_prob] /= n_trials;
-            printf("%lf \t %lf \t%d\n", prob_spread[i_prob], total_percent[i_prob], iter_count[i_prob]);
+    totalTime = MPI_Wtime() - startTime;
+
+    if (id == 0) {
+        printf("Forest size of %dx%d\nProbability of fire spreading  ,  Average percent burned  ,  Number of Iterations\n", forest_size, forest_size);
+
+        // Print arrays of percent burned and iteration counts
+        int i; // declare i here
+        for (i = 0; i < n_probs; i++) {
+            percent_burned[i] /= n_trials;
+            count[i] /= n_trials;
+            printf("%lf  ,  %lf  ,  %lf \n",prob_spread[i],
+                percent_burned[i], count[i]);
         }
 
-        printf("Total Time: %f\n", MPI_Wtime() - start_time);
-
+        printf("Total time: %f\n", totalTime);
+        
         // plot graph
-        if (do_display == 1) {
-            xgraphSetup(&thegraph, 300, 300);
-            xgraphDraw(&thegraph, n_probs, 0, 0, 1, 1, prob_spread, total_percent);
+        if (do_display==1) {
+            xgraphSetup(&thegraph,300,300);
+            xgraphDraw(&thegraph,n_probs,0,0,1,1,prob_spread,percent_burned);
             pause();
         }
     }
 
-    MPI_Finalize();
-
     // clean up
+    MPI_Finalize();
     delete_forest(forest_size,forest);
     free(prob_spread);
     free(percent_burned);
-    free(iter_count);
-    free(total_percent);
-    free(total_iter);
+    free(percent_burned_local);
+    free(count);
+    free(count_local);
     return 0;
 }
 
@@ -302,39 +311,111 @@ void print_forest(int forest_size,int ** forest) {
         printf("\n");
     }
 }
-]0;pjf5@remotel2: ~/374/homework03/firestarter[01;32mpjf5@remotel2[00m:[01;34m~/374/homework03/firestarter[00m$ cat ../SLURM/firestarter.o 
-ELF          >                    P           @     @   UH‰åHƒì@‰}Ü‰uØ‰UÔH‰MÈL‰EÀ‹EØ;EÔv@ƒ}Ü u+‹UÔ‹EØ‰Æ¿    ¸    è    ‹EÔ‰Æ¿    ¸    è    è    ¿   è    ‹EÔH…ÀxòH*ÀëH‰ÂHÑêƒàH	ÂòH*ÂòXÀò*MØò^Áè    òH,À‰Eô‹EÜ¯Eô‰Eü‹Eô‹UüĞ‰Eø‹MØ‹EÔº    ÷ñ‰Uğƒ}ğ t>‹EÜ;Eğr6‹Eôƒè‰Eì‹Eğ¯Eô‰Eè‹EÜ+Eğ¯Eì‰Eä‹Eä‹UèĞ‰Eü‹Eì‹UüĞ‰EøH‹EÈ‹Uü‰H‹EÀ‹Uø‰ÉÃUH‰åSHìè   ‰½,ÿÿÿH‰µ ÿÿÿÇEŒ   ¸    H‰EàH¸      ğ?H‰EØÇEˆˆ  ÇE„e   ÇE€    ¸    H‰EĞÇ…|ÿÿÿ    Ç…xÿÿÿ    ÇEÌ    Ç…<ÿÿÿÿÿÿÿÇ…8ÿÿÿÿÿÿÿH• ÿÿÿH…,ÿÿÿH‰ÖH‰Çè    H…xÿÿÿH‰Æ¿    è    H…|ÿÿÿH‰Æ¿    è    è    ò…ÿÿÿH‹…ÿÿÿH‰EĞ‹…,ÿÿÿƒø~$H‹… ÿÿÿHƒÀH‹ HUŒ¾    H‰Ç¸    è    ‹…,ÿÿÿƒø~$H‹… ÿÿÿHƒÀH‹ HUˆ¾    H‰Ç¸    è    ‹…,ÿÿÿƒø~$H‹… ÿÿÿHƒÀH‹ HU„¾    H‰Ç¸    è    ‹…,ÿÿÿƒø~$H‹… ÿÿÿHƒÀ H‹ HU€¾    H‰Ç¸    è    ‹E€…ÀtÇE€   ¿    è    ‹EŒ‰Çè    H‰EÀ‹E„H˜HÁàH‰Çè    H‰E¸‹E„H˜HÁàH‰Çè    H‰E°‹E„H˜HÁàH‰Çè    H‰E¨‹E„H˜HÁàH‰Çè    H‰E ‹E„H˜HÁàH‰Çè    H‰E˜‹Eˆ‰Â‹µ|ÿÿÿ‹…xÿÿÿH½8ÿÿÿH<ÿÿÿI‰ø‰Çè    òEØò\Eà‹E„ƒèò*Èò^ÁòE‹…xÿÿÿ;EÌu
-¿    è    ÇEè    ëa‹EèH˜HÅ    H‹E¸HĞò*EèòYEòXEàò ‹EèH˜HÅ    H‹E°HÂ¸    H‰‹EèH˜H…    H‹E¨HĞÇ     ƒEè‹E„9Eè|—‹…<ÿÿÿ‰Eìé×   ÇEè    é»   ‹EèH˜H…    H‹E¨H‹EŒ‰ÂÁêĞÑø‰Á‹EŒ‰ÂÁêĞÑø‰Â‹EèH˜H4Å    H‹E¸HğH‹ ‹}ŒH‹uÀH‰…ÿÿÿò…ÿÿÿè    ‰‹EèH˜HÅ    H‹E°H‹EèH˜HÅ    H‹E°HĞò ò¥ÿÿÿ‹EŒH‹UÀH‰Ö‰Çè    òX…ÿÿÿòƒEè‹E„9EèŒ9ÿÿÿƒEì‹Uì‹…8ÿÿÿ9Â‚ÿÿÿ‹U„H‹u H‹E°HÇ$    A¹    A¸    ¹    H‰Çè    ‹U„H‹u˜H‹E¨HÇ$    A¹    A¸    ¹    H‰Çè    ‹…xÿÿÿ;EÌ…?  ÇEè    é¶   ‹EèH˜HÅ    H‹E HÂ‹EèH˜HÅ    H‹E HÈò‹Eˆò*Àò^Èf(Áò‹EèH˜H…    H‹E¨HĞ‹‹EèH˜HÅ    H‹E HĞH‹‹EèH˜H4Å    H‹E¸HğH‹ ‰ÎH‰•ÿÿÿòÿÿÿH‰…ÿÿÿò…ÿÿÿ¿    ¸   è    ƒEè‹E„9EèŒ>ÿÿÿè    ò\EĞ¿    ¸   è    ‹E€ƒøuPH…@ÿÿÿº,  ¾,  H‰Çè    ‹u„H‹M H‹U¸H…@ÿÿÿò    ò    fWÉfWÀH‰Çè    è    è    ‹EŒH‹UÀH‰Ö‰Çè    H‹E¸H‰Çè    H‹E°H‰Çè    H‹E¨H‰Çè    H‹E H‰Çè    H‹E˜H‰Çè    ¸    HÄè   []ÃUH‰åHƒì ‰}ìHEøH‰Çè    H‹Eø‰Â‹EìĞ‰Çè    ÉÃUH‰åHƒì@‰}ìH‰uàòEØ‰Uè‰MÔH‹Uà‹EìH‰Ö‰Çè    ‹MÔ‹UèH‹uà‹Eì‰Çè    ÇEü    ë"H‹EØH‹Mà‹UìH‰EÈòEÈH‰Î‰×è    ƒEüH‹Uà‹EìH‰Ö‰Çè    …ÀuÉ‹EüÉÃUH‰å‰}ìH‰uà‹Eì¯Eìƒè‰EğÇEô    ÇEü    ëHÇEø    ë3‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞ‹ ƒøuƒEôƒEø‹Eø;Eì|ÅƒEü‹Eü;Eì|°‹Eôƒèò*Àò*Mğò^ÁòEØH‹EØH‰EØòEØ]ÃUH‰åSHƒì(‰}Ü‹EÜH˜HÁàH‰Çè    H‰EàÇEì    ë-‹EìH˜HÅ    H‹EàH‹EÜH˜HÁàH‰Çè    H‰ƒEì‹Eì;EÜ|ËH‹EàHƒÄ([]ÃUH‰å‰}ìH‰uàÇEü    ëCÇEø    ë.‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞÇ     ƒEø‹Eø;Eì|ÊƒEü‹Eü;Eì|µ]ÃUH‰åHƒì ‰}ìH‰uàÇEü    ë#‹EüH˜HÅ    H‹EàHĞH‹ H‰Çè    ƒEü‹Eü;Eì|ÕH‹EàH‰Çè    ÉÃUH‰å‰}üH‰uğ‰Uø‰Mì‹EøH˜HÅ    H‹EğHĞH‹ ‹UìHcÒHÁâHĞÇ    ]ÃUH‰åHƒìòEøè    ò*Àò    ò^ÁòMøf.Èv¸   ë¸    ÉÃUH‰åHƒì0‰}ìH‰uàòEØÇEü    éÊ   ÇEø    é®   ‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞ‹ ƒøu*‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞÇ    ‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞ‹ ƒøu*‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞÇ    ƒEø‹Eø;EìŒFÿÿÿƒEü‹Eü;EìŒ*ÿÿÿÇEü    é1  ÇEø    é  ‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞ‹ ƒø…â  ƒ}ü tjH‹EØH‰EĞòEĞè    …ÀtT‹EüH˜HÁàHPøH‹EàHĞH‹ ‹UøHcÒHÁâHĞ‹ …Àu*‹EüH˜HÁàHPøH‹EàHĞH‹ ‹UøHcÒHÁâHĞÇ    ‹Eìƒè;EütrH‹EØH‰EĞòEĞè    …Àt\‹EüH˜HƒÀHÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞ‹ …Àu.‹EüH˜HƒÀHÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞÇ    ƒ}ø trH‹EØH‰EĞòEĞè    …Àt\‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHƒêHĞ‹ …Àu.‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHƒêHĞÇ    ‹Eìƒè;EøtrH‹EØH‰EĞòEĞè    …Àt\‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHƒÂHÁâHĞ‹ …Àu.‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHƒÂHÁâHĞÇ    ƒEø‹Eø;EìŒßıÿÿƒEü‹Eü;EìŒÃıÿÿÉÃUH‰å‰}ìH‰uàÇEü    ëvÇEø    ëa‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞ‹ ƒøt+‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞ‹ ƒøu¸   ëƒEø‹Eø;Eì|—ƒEü‹Eü;Eì|‚¸    ]ÃUH‰åHƒì ‰}ìH‰uàÇEü    ëdÇEø    ëE‹EüH˜HÅ    H‹EàHĞH‹ ‹UøHcÒHÁâHĞ‹ ƒøu¿.   è    ë
-¿X   è    ƒEø‹Eø;Eì|³¿
-   è    ƒEü‹Eü;Eì|”ÉÃ    
-*** Number of MPI processes (%u) exceeds REPS (%u)
-    *** Please run with -np less than or equal to %u
+]0;pjf5@remotel1: ~/374/homework03/firestarter[01;32mpjf5@remotel1[00m:[01;34m~/374/homework03/firestarter[00m$ cat ../s[KSLURM/slurm-221570.out 
+Forest size of 20x20
+Probability of fire spreading  ,  Average percent burned  ,  Number of Iterations
+0.000000  ,  0.000000  ,  2.000000 
+0.010000  ,  0.000128  ,  2.051200 
+0.020000  ,  0.000128  ,  2.051200 
+0.030000  ,  0.000385  ,  2.153600 
+0.040000  ,  0.000385  ,  2.102400 
+0.050000  ,  0.000770  ,  2.307200 
+0.060000  ,  0.000385  ,  2.153600 
+0.070000  ,  0.000770  ,  2.307200 
+0.080000  ,  0.001283  ,  2.460800 
+0.090000  ,  0.001291  ,  2.412800 
+0.100000  ,  0.000898  ,  2.358400 
+0.110000  ,  0.002310  ,  2.665600 
+0.120000  ,  0.002378  ,  2.795200 
+0.130000  ,  0.002121  ,  2.590400 
+0.140000  ,  0.000642  ,  2.204800 
+0.150000  ,  0.002582  ,  2.822400 
+0.160000  ,  0.003080  ,  2.972800 
+0.170000  ,  0.003661  ,  3.102400 
+0.180000  ,  0.004824  ,  3.385600 
+0.190000  ,  0.006629  ,  3.979200 
+0.200000  ,  0.003986  ,  3.102400 
+0.210000  ,  0.003721  ,  3.228800 
+0.220000  ,  0.003533  ,  2.948800 
+0.230000  ,  0.005903  ,  3.433600 
+0.240000  ,  0.004106  ,  3.177600 
+0.250000  ,  0.010214  ,  4.665600 
+0.260000  ,  0.010049  ,  4.723200 
+0.270000  ,  0.010651  ,  4.560000 
+0.280000  ,  0.012062  ,  4.355200 
+0.290000  ,  0.007956  ,  3.996800 
+0.300000  ,  0.014949  ,  5.750400 
+0.310000  ,  0.020916  ,  6.249600 
+0.320000  ,  0.012198  ,  5.075200 
+0.330000  ,  0.021638  ,  6.057600 
+0.340000  ,  0.040112  ,  8.880000 
+0.350000  ,  0.037193  ,  8.502400 
+0.360000  ,  0.037999  ,  8.556800 
+0.370000  ,  0.053426  ,  9.160000 
+0.380000  ,  0.049772  ,  9.190400 
+0.390000  ,  0.047350  ,  9.424000 
+0.400000  ,  0.066061  ,  10.464000 
+0.410000  ,  0.113504  ,  13.342400 
+0.420000  ,  0.155056  ,  17.548800 
+0.430000  ,  0.129003  ,  14.419200 
+0.440000  ,  0.172166  ,  21.089600 
+0.450000  ,  0.139020  ,  15.712000 
+0.460000  ,  0.181257  ,  19.332800 
+0.470000  ,  0.174685  ,  19.390400 
+0.480000  ,  0.228519  ,  15.435200 
+0.490000  ,  0.331132  ,  26.688000 
+0.500000  ,  0.424168  ,  31.467200 
+0.510000  ,  0.428463  ,  28.060800 
+0.520000  ,  0.474342  ,  28.190400 
+0.530000  ,  0.596319  ,  35.171200 
+0.540000  ,  0.646111  ,  35.563200 
+0.550000  ,  0.624088  ,  28.849600 
+0.560000  ,  0.659268  ,  28.654400 
+0.570000  ,  0.704762  ,  28.808000 
+0.580000  ,  0.801628  ,  31.644800 
+0.590000  ,  0.724499  ,  28.214400 
+0.600000  ,  0.821041  ,  29.560000 
+0.610000  ,  0.817079  ,  26.193600 
+0.620000  ,  0.827433  ,  26.211200 
+0.630000  ,  0.927314  ,  29.064000 
+0.640000  ,  0.945921  ,  30.120000 
+0.650000  ,  0.955128  ,  26.352000 
+0.660000  ,  0.953416  ,  26.054400 
+0.670000  ,  0.956988  ,  25.584000 
+0.680000  ,  0.919836  ,  24.590400 
+0.690000  ,  0.921881  ,  22.768000 
+0.700000  ,  0.976826  ,  23.484800 
+0.710000  ,  0.977315  ,  23.972800 
+0.720000  ,  0.978727  ,  24.211200 
+0.730000  ,  0.982552  ,  24.283200 
+0.740000  ,  0.936209  ,  22.512000 
+0.750000  ,  0.990268  ,  23.204800 
+0.760000  ,  0.987793  ,  22.952000 
+0.770000  ,  0.941726  ,  22.232000 
+0.780000  ,  0.993644  ,  22.873600 
+0.790000  ,  0.993440  ,  22.382400 
+0.800000  ,  0.995296  ,  22.307200 
+0.810000  ,  0.997109  ,  22.153600 
+0.820000  ,  0.995441  ,  22.204800 
+0.830000  ,  0.997562  ,  22.283200 
+0.840000  ,  0.998204  ,  22.129600 
+0.850000  ,  0.998204  ,  22.102400 
+0.860000  ,  0.998845  ,  22.256000 
+0.870000  ,  0.998973  ,  22.051200 
+0.880000  ,  0.999743  ,  22.102400 
+0.890000  ,  0.999230  ,  22.051200 
+0.900000  ,  0.999102  ,  22.000000 
+0.910000  ,  0.999615  ,  21.948800 
+0.920000  ,  0.999872  ,  22.000000 
+0.930000  ,  0.999743  ,  22.000000 
+0.940000  ,  1.000000  ,  22.102400 
+0.950000  ,  1.000000  ,  22.000000 
+0.960000  ,  1.000000  ,  22.000000 
+0.970000  ,  1.000000  ,  22.000000 
+0.980000  ,  1.000000  ,  22.051200 
+0.990000  ,  1.000000  ,  22.000000 
+1.000000  ,  1.000000  ,  22.000000 
+Total time: 0.158305
+]0;pjf5@remotel1: ~/374/homework03/firestarter[01;32mpjf5@remotel1[00m:[01;34m~/374/homework03/firestarter[00m$ exit
 
- %d   Probability of fire spreading | Average percent burned | Number of Iterations %lf 	 %lf 	%d
- Total Time: %f
-          ğ?  ÀÿÿÿßA GCC: (GNU) 4.8.5 20150623 (Red Hat 4.8.5-44)          zR x               A†C     <       ò   A†CHƒå     `       +    A†Cf      €       „    A†C             Ÿ    A†Cš      À       j    A†CEƒ`      ä       a    A†C\           Q    A†CL     $      =    A†Cx      D      ;    A†Cv      d      A   A†C<    „      ™    A†C”     ¤      †    A†C                              ñÿ                                                                                                                                                                                             '                      .                      ;                      @                      E           ò      J                      S                      g                      u                      ƒ                                                 
-      +       ª     X      j       º                      Á                      Æ     5      „       Õ     ¹      Ÿ       è                      ø                                                                                      ,                     7                     =    #	      Q       K                     ˆ                      P                     V    Â      a       h    t	      =       s    ì	      A      €    -      ™       ’    ±	      ;       Q                     Ÿ    Æ      †       ¬                      firestarter.c getChunkStartStopValues printf MPI_Finalize exit ceil main MPI_Init ompi_mpi_comm_world MPI_Comm_rank MPI_Comm_size MPI_Wtime __isoc99_sscanf seed_by_time allocate_forest malloc puts burn_until_out get_percent_burned ompi_mpi_op_sum ompi_mpi_double MPI_Reduce ompi_mpi_int xgraphSetup xgraphDraw pause delete_forest free srand initialize_forest light_tree forest_burns forest_is_burning fire_spreads print_forest putchar     0       
-              :          
-   üÿÿÿÿÿÿÿD       
-      8       N          
-   üÿÿÿÿÿÿÿS             üÿÿÿÿÿÿÿ]             üÿÿÿÿÿÿÿ             üÿÿÿÿÿÿÿ±            üÿÿÿÿÿÿÿÀ      
-              Å            üÿÿÿÿÿÿÿÔ      
-              Ù            üÿÿÿÿÿÿÿŞ            üÿÿÿÿÿÿÿ      
-      k                    üÿÿÿÿÿÿÿB      
-      k       O            üÿÿÿÿÿÿÿq      
-      k       ~            üÿÿÿÿÿÿÿ       
-      k       ­            üÿÿÿÿÿÿÿÅ            üÿÿÿÿÿÿÿÏ            üÿÿÿÿÿÿÿä            üÿÿÿÿÿÿÿù            üÿÿÿÿÿÿÿ            üÿÿÿÿÿÿÿ#            üÿÿÿÿÿÿÿ8            üÿÿÿÿÿÿÿe         	   üÿÿÿÿÿÿÿ’      
-      p       —            üÿÿÿÿÿÿÿ†            üÿÿÿÿÿÿÿÎ            üÿÿÿÿÿÿÿ                          
-              #      
-              +            üÿÿÿÿÿÿÿ>                    J      
-              O      
-              W            üÿÿÿÿÿÿÿ      
-      ¾       $         
-   üÿÿÿÿÿÿÿ9            üÿÿÿÿÿÿÿC      
-      Í       M         
-   üÿÿÿÿÿÿÿn            üÿÿÿÿÿÿÿˆ            Ü                   Ü                     üÿÿÿÿÿÿÿ¥         !   üÿÿÿÿÿÿÿª            üÿÿÿÿÿÿÿ»         "   üÿÿÿÿÿÿÿÇ         #   üÿÿÿÿÿÿÿÓ         #   üÿÿÿÿÿÿÿß         #   üÿÿÿÿÿÿÿë         #   üÿÿÿÿÿÿÿ÷         #   üÿÿÿÿÿÿÿ         $   üÿÿÿÿÿÿÿ/         %   üÿÿÿÿÿÿÿ\         &   üÿÿÿÿÿÿÿp         '   üÿÿÿÿÿÿÿ—         (   üÿÿÿÿÿÿÿ¬         )   üÿÿÿÿÿÿÿq            üÿÿÿÿÿÿÿ¤            üÿÿÿÿÿÿÿV	         #   üÿÿÿÿÿÿÿn	         #   üÿÿÿÿÿÿÿ¿	         +   üÿÿÿÿÿÿÿË	            ä       =         *   üÿÿÿÿÿÿÿ²         *   üÿÿÿÿÿÿÿ*         *   üÿÿÿÿÿÿÿ§         *   üÿÿÿÿÿÿÿ         -   üÿÿÿÿÿÿÿ$         -   üÿÿÿÿÿÿÿ:         -   üÿÿÿÿÿÿÿ                      @                   d             
-      „             5      ¤             ¹      Ä             X      è             Â                  #	      (            t	      H            ±	      h            ì	      ˆ            -      ¨            Æ       .symtab .strtab .shstrtab .rela.text .data .bss .rodata .comment .note.GNU-stack .rela.eh_frame                                                                                              @       L                                   @               x      8      
-                    &                     Œ                                     ,                     Œ                                     1                           ğ                              9      0               €      .                             B                      ®                                     W                     °      À                             R      @               °      8      
-                                          p      P         	                 	                      À      ´                                                   è      a                              ]0;pjf5@remotel2: ~/374/homework03/firestarter[01;32mpjf5@remotel2[00m:[01;34m~/374/homework03/firestarter[00m$ exit
-
-Script done on 2023-11-15 02:38:09-05:00 [COMMAND_EXIT_CODE="0"]
+Script done on 2023-11-16 21:45:37-05:00 [COMMAND_EXIT_CODE="0"]

@@ -1,14 +1,14 @@
-PROG   = squareAndSum
-CC     = mpicc
-CFLAGS = -Wall -ansi -pedantic -std=c99
-LFLAGS = -o $(PROG) 
+PROG   = parSquareAndSum
+SRC    = $(PROG).cpp
+CC     = mpic++
+CFLAGS = -Wall -ansi -pedantic -std=c++11
+LFLAGS = -o $(PROG) -lm
 
-$(PROG): $(PROG).c
-	$(CC) $(CFLAGS) $(PROG).c $(LFLAGS)
+$(PROG): $(SRC) OO_MPI_IO.h 
+	$(CC) $(CFLAGS) $(SRC) $(LFLAGS)
 
 clean:
-	rm -f $(PROG) a.out *~ *.o *#
+	rm -f $(PROG) a.out *~ *.o 
 
-cleanText:
-	rm -f $(PROG) *.txt
-
+cleanBin:
+	rm -f *.bin /scratch/adams/*.bin

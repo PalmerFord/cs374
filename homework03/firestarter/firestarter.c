@@ -43,17 +43,19 @@ int main(int argc, char ** argv) {
     double prob_step;
     int **forest;
     double * count;
+
     double * count_local;          // For MPI_Reduce
     double * percent_burned_local; // For MPI_Reduce
+
     double * percent_burned;
     int i_trial;
-    int n_trials=5000;
+    int n_trials=20;
     int i_prob;
     int n_probs=101;
-    int do_display=1;
+    int do_display=0;
     Bool initialized = false;
     xgraph thegraph;
-    // MPI related variables
+    
     int id = -1;
     int numProcesses = -1;
     double startTime = 0.0, totalTime = 0.0;
@@ -104,7 +106,7 @@ int main(int argc, char ** argv) {
                 percent_burned_local[i_prob]=0.0;
                 prob_spread[i_prob] = prob_min + (double)i_prob * prob_step;
             }
-            //burn until fire is gone
+            // Burn until the fire is out
             count_local[i_prob] += burn_until_out(forest_size,forest,prob_spread[i_prob],
                 forest_size/2,forest_size/2);
             percent_burned_local[i_prob] += get_percent_burned(forest_size,forest);
@@ -112,28 +114,24 @@ int main(int argc, char ** argv) {
         initialized = true;
     }
 
-    // Add all results from each processes
-    MPI_Reduce(percent_burned_local, percent_burned, n_probs, MPI_DOUBLE, MPI_SUM, 0,
-            MPI_COMM_WORLD);
-
-    MPI_Reduce(count_local, count, n_probs, MPI_DOUBLE, MPI_SUM, 0,
-            MPI_COMM_WORLD);
+    MPI_Reduce(percent_burned_local, percent_burned, n_probs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(count_local, count, n_probs, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     totalTime = MPI_Wtime() - startTime;
 
     if (id == 0) {
-        printf("Probability of fire spreading, Average percent burned with forest size of %dx%d\n", forest_size, forest_size);
+        printf("Forest size of %dx%d\nProbability of fire spreading  ,  Average percent burned  ,  Number of Iterations\n", forest_size, forest_size);
 
         // Print arrays of percent burned and iteration counts
-        for (int i = 0; i < n_probs; i++) {
+        int i; // declare i here
+        for (i = 0; i < n_probs; i++) {
             percent_burned[i] /= n_trials;
             count[i] /= n_trials;
-            printf("%lf , %lf , count: %lf \n",prob_spread[i],
+            printf("%lf  ,  %lf  ,  %lf \n",prob_spread[i],
                 percent_burned[i], count[i]);
         }
 
-        // print time it took to find total time
-        printf("Finished in time %f secs.\n", totalTime);
+        printf("Total time: %f\n", totalTime);
         
         // plot graph
         if (do_display==1) {

@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "limits.h": "c",
-        "parallelloopchunks.h": "c"
+        "parallelloopchunks.h": "c",
+        "stdio.h": "c"
     }
 }
