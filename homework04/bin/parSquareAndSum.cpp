@@ -32,8 +32,8 @@ int main(int argc, char * argv[])
   double readTime = 0.0;
   double totalTime = 0.0;
 
-  double sumTime = 0.0;
-  double sumStart = 0.0;
+  double computeTime = 0.0;
+  double computeStart = 0.0;
 
   const int MASTER = 0;
   int id = -1, numProcs = -1;
@@ -55,19 +55,19 @@ int main(int argc, char * argv[])
     exit(1);
   }
   readTime = MPI_Wtime() - startTime;
-  sumStart = MPI_Wtime();
+  computeStart = MPI_Wtime();
 
   sum = vectorSquareAndSum(vec);
 
-  sumTime = MPI_Wtime() - sumStart;
-  totalTime = readTime + sumTime;
+  computeTime = MPI_Wtime() - computeStart;
+  totalTime = readTime + computeTime;
 
   MPI_Reduce(&sum, &totalSum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
   reader.close();
 
   if(id == MASTER) {
     printf("\nThe sum of the squares of the values in the file '%s' is %g\n", argv[1], totalSum);
-    printf("Read Time:\tSum Time:\tTotal Time:\n%f \t%f  \t%f\n", readTime, sumTime, totalTime);
+    printf("Read time,  Compute time,  Total time\n%f,     %f,     %f\n", readTime, computeTime, totalTime);
   }
 
   MPI_Finalize();

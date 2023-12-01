@@ -1,0 +1,62 @@
+2 Processors, 1m-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/1m-doubles.bin' is 333478
+Read Time:	Sum Time:	Total Time:
+0.005227 	0.005065  	0.010292
+
+2 Processors, 1m-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/1m-doubles.bin' is 333478
+Read Time:	Sum Time:	Total Time:
+0.003182 	0.006953  	0.010135
+
+2 Processors, 1m-doubles.bin
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/1m-doubles.bin' is 333478
+Read Time:	Sum Time:	Total Time:
+0.002121 	0.002241  	0.004362
+
+
+2 Processors, 10m-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/10m-doubles.bin' is 3.33284e+06
+Read Time:	Sum Time:	Total Time:
+0.022329 	0.040528  	0.062857
+
+2 Processors, 10m-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/10m-doubles.bin' is 3.33284e+06
+Read Time:	Sum Time:	Total Time:
+0.021918 	0.039882  	0.061800
+
+2 Processors, 10m-doubles.bin
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/10m-doubles.bin' is 3.33284e+06
+Read Time:	Sum Time:	Total Time:
+0.014481 	0.021908  	0.036389
+
+
+2 Processors, 100m-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/100m-doubles.bin' is 3.3325e+07
+Read Time:	Sum Time:	Total Time:
+0.205635 	0.392352  	0.597987
+
+2 Processors, 100m-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/100m-doubles.bin' is 3.3325e+07
+Read Time:	Sum Time:	Total Time:
+0.205415 	0.391253  	0.596668
+
+2 Processors, 100m-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/100m-doubles.bin' is 3.3325e+07
+Read Time:	Sum Time:	Total Time:
+0.133892 	0.209118  	0.343009
+
+
+2 Processors, 1b-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/1b-doubles.bin' is 3.33335e+08
+Read Time:	Sum Time:	Total Time:
+1.973563 	3.842617  	5.816180
+
+2 Processors, 1b-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/1b-doubles.bin' is 3.33335e+08
+Read Time:	Sum Time:	Total Time:
+2.043368 	3.848384  	5.891752
+
+2 Processors, 1b-doubles.bin 
+The sum of the squares of the values in the file '/home/cs/374/exercises/04/1b-doubles.bin' is 3.33335e+08
+Read Time:	Sum Time:	Total Time:
+1.297773 	2.044319  	3.342092
