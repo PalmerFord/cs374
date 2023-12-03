@@ -56,7 +56,7 @@ int main(int argc, char * argv[])
            argv[1], sum);
 
   totalTime = MPI_Wtime() - startTime;
-  computeTime = totalTime - readTime; // ERROR
+  computeTime = totalTime - readTime; 
 
   printf("Read time,  Compute time,  Total time\n%f,     %f,     %f\n", readTime, computeTime, totalTime);
 
