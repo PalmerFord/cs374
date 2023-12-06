@@ -53,7 +53,7 @@ int main(int argc, char * argv[])
   char* fileName = processCmdLineArgs(argc, argv);
 
   ParallelReader<double> reader(fileName, MPI_DOUBLE, id, numProcs);
-  std::vector<double> vec;
+  std::vector<double> vec;  
   reader.readChunk(vec);
 
   if (argc != 2) {
