@@ -8,10 +8,10 @@
  * Joel Adams, Fall 2023
  * for CS 374 (HPC) at Calvin University.
  * 
- * Alex Miller
+ * Palmer Ford
  * Calvin University
- * 6 Dec 2023
- * 
+ * November 27, 2023
+ * for CS374, project 4
  */
 
 #include <stdio.h>      /* I/O */

@@ -7,6 +7,12 @@
  *
  * Joel Adams, Fall 2023
  * for CS 374 (HPC) at Calvin University.
+ * 
+ * Palmer Ford
+ * Parallelization of the original firestarter where number of trial is parallelized to reduce completion time.
+ * Calvin University
+ * November 27, 2023
+ * for CS374, project 4
  */
 
 #include <stdio.h> /* I/O */
